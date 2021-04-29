@@ -1,1 +1,625 @@
+---
+title: "ANLY 565 Time Series and Forecasting (Project Carbon Emission)"
+author: "Sonachi Mogbogu, Uttara Suryavanshi, Rahul Awale"
+date: "`r Sys.Date()`"
+output:
+
+  html_document:
+    df_print: paged
+---
+
+
+
+```{r}
+
+   library(readr)
+   library(ggplot2)
+   library(forecast)
+   library(fpp2)
+   library(TTR)
+   library(dplyr)
+   library(mice)
+   library(readxl)
+   library(moments)
+   library(ggpubr)
+   library(tseries)
+
+  # if (!exists(.Random.seed)) runif(1)
+  #    seed <- .Random.seed
+
+   set.seed(1000)      
+
+
+
+```
+
+1  Check you working directory
+```{r}
+   getwd()
+
+```
+
+2  Set your working directory to file path 
+```{r}
+   setwd('C:/Users/obihov/Documents/ANLY 565/RScript/project')
+   print(getwd())
+  
+```
+
+3  Open file and fix the date column format to follow "YYYY-MM-DD"
+```{r}
+
+   carbon_emission <- read.csv("MER_T12_06.csv", header = TRUE)
+ 
+   carbon_emission$Value <- as.numeric(as.character(carbon_emission$Value))
+   carbon_emission$YYYYMM <- paste0(carbon_emission$YYYYMM, "01")
+   carbon_emission$YYYYMM  <- as.Date(as.character(carbon_emission$YYYYMM), '%Y%m%d')   
+```
+
+4. Spot missing values and conduct reprocessing of data
+
+
+```{r viz}
+   library(visdat)
+   
+   vis_dat(carbon_emission)
+   
+   vis_miss(carbon_emission)
+   
+   summary(carbon_emission)
+
+```
+
+```{r}
+
+   # viewing table
+   glimpse(carbon_emission)
+
+   # accuracy check
+   summary(carbon_emission)
+   
+   # Checking and resolving missing data
+   apply(carbon_emission,2,function(x) sum(is.na(x)))
+   
+   ## resolving with mean substitution
+   percentmiss = function(x){sum(is.na(x))/length(x)*100}
+   apply(carbon_emission,1,percentmiss)
+   missing = apply(carbon_emission,1,percentmiss)
+   table(missing)
+   replace = subset(carbon_emission, missing <= 5)
+   missing0 = apply(replace,1,percentmiss)
+   table(missing0)
+   
+   ## subsetting
+   dont = subset(carbon_emission, missing > 5)
+   missing2 = apply(dont,1,percentmiss)
+   table(missing2)
+   
+   apply(carbon_emission,2,percentmiss)
+   
+   # excluding categorical variables
+   replace_col = replace[,-c(1,3)]
+   dont_col = replace[,c(1,3)]
+   
+
+   temp_no_miss = mice::mice(replace_col) 
+   
+   no_miss = complete(temp_no_miss,1)
+   summary(no_miss)
+   
+   no_na_carbon_emission = cbind(dont_col, no_miss)
+   summary(no_na_carbon_emission)
+   
+   vis_dat(no_na_carbon_emission)
+
+   vis_miss(no_na_carbon_emission)
+   
+```
+
+
+```{r}
+
+   hist(no_na_carbon_emission$Value, xlab = 'carbon emission value', breaks = 15)
+
+   # Before Transformation
+   skewness(no_na_carbon_emission$Value, na.rm=TRUE)
+   kurtosis(no_na_carbon_emission$Value, na.rm=TRUE)
+
+   #testing normality
+   shapiro.test(no_na_carbon_emission$Value)
+   
+   # Transformation
+   
+   no_na_carbon_emission$Value <- log10(no_na_carbon_emission$Value+1 - min(no_na_carbon_emission$Value))
+   
+   # After Transformation
+   
+   skewness(no_na_carbon_emission$Value, na.rm=TRUE)
+   kurtosis(no_na_carbon_emission$Value, na.rm=TRUE)
+    
+   ggdensity(no_na_carbon_emission, x = "Value", 
+             fill = "lightgray", title = "CONT") +
+   stat_overlay_normal_density(color = "red", linetype = "dashed")
+   
+   hist(no_na_carbon_emission$Value, xlab = 'carbon emission value', breaks = 15) # multinomial distribution
+
+   #normality
+   shapiro.test(no_na_carbon_emission$Value)
+
+```
+
+
+```{r}
+
+   # Recoding categorical data
+
+   no_na_carbon_emission <- no_na_carbon_emission %>% 
+   mutate(
+       description_reduced = recode(
+          .$Description,
+          "Coal Electric Power Sector CO2 Emissions" = "coal",
+          "Distillate Fuel, Including Kerosene-Type Jet Fuel, Oil Electric Power Sector CO2 Emissions" = "distillate fuel",   
+          "Geothermal Energy Electric Power Sector CO2 Emissions"="geothermal energy",
+          "Natural Gas Electric Power Sector CO2 Emissions" = "natural gas",      
+          "Non-Biomass Waste Electric Power Sector CO2 Emissions"="non-biomass waste",      
+          "Petroleum Coke Electric Power Sector CO2 Emissions" = "petroleum coke",      
+          "Petroleum Electric Power Sector CO2 Emissions" = "petroleum electric power",      
+          "Residual Fuel Oil Electric Power Sector CO2 Emissions" = "residual fuel oil", 
+          "Total Energy Electric Power Sector CO2 Emissions" = "total energy"
+       )
+    )
+
+   
+   # tabulate results
+   
+   table(no_na_carbon_emission$description_reduced)
+
+```
+
+
+```{r, warning=FALSE, message=FALSE}
+
+   boxplot<-ggplot(data=no_na_carbon_emission) +
+   geom_boxplot(mapping=aes(x=description_reduced, y=Value, color=description_reduced)) +
+   labs(title="Carbon Emission in the United States", y="Carbon Emission(in million metric tons)", x="")
+   
+boxplot<-boxplot+guides(color=guide_legend(title="Type"))
+   
+   boxplot
+
+
+```
+
+```{r, warning=FALSE, message=FALSE}
+   #histogram
+   
+   hist1<-ggplot(data=no_na_carbon_emission, aes(Value))+labs(title = "Carbon Emission Data Distribution by Value in the United States",x="Carbon Emission(in million metric tons)", y="Frequency")+geom_histogram(color="white",fill="gold", bins=10)
+   
+   hist1
+   
+   hist2<-ggplot(data=no_na_carbon_emission, aes(YYYYMM))+labs(title = "Carbon Emission Data Distribution by Date in the United States",x="Date", y="Frequency")+geom_histogram(color="white",fill="sky blue", bins=43)
+   
+   hist2
+   
+   hist3<-ggplot(data=no_na_carbon_emission, aes(x=Column_Order), stat_count(Column_Order))+labs(title = "Carbon Emission Data Distribution by Date in the United States",x="Type of Emission", y="Frequency")+geom_histogram(color="white",fill="gray", bins=9)
+   
+   hist3
+   
+   
+```
+   
+
+```{r corr, warning=FALSE, message=FALSE}
+
+   #creating separate values 
+   
+   date <- no_na_carbon_emission$YYYYMM
+   
+   emission<-as.numeric(no_na_carbon_emission$Value)
+   
+   type_no<-as.numeric(no_na_carbon_emission$Column_Order)
+   
+   type_name<-no_na_carbon_emission$description_reduced
+   
+   emission_date<-cbind.data.frame(emission,date)
+   
+   emission_type<-cbind.data.frame(emission,type_no)
+   
+   emission_date_type<-cbind.data.frame(emission,date,type_no)
+   
+   emission_date_type_name<-cbind.data.frame(emission,date,type_no,type_name)
+   #checking correlation
+   
+   cor(emission_type, method = c("pearson","kendall","spearman"))
+   
+   #creating a function
+   flattenCorrMatrix <- function(cormat, pmat) {
+     ut <- upper.tri(cormat)
+     data.frame(
+       row = rownames(cormat)[row(cormat)[ut]],
+       column = rownames(cormat)[col(cormat)[ut]],
+       cor  =(cormat)[ut],
+       p = pmat[ut]
+       )
+   }
+   
+   library(Hmisc)
+   library(corrplot)
+   
+   res<-rcorr(as.matrix((emission_type)))
+   res
+   
+   flattenCorrMatrix(res$r, res$P)
+   
+   # Insignificant correlations are leaved blank
+   corrplot(res$r, type="upper", order="hclust", 
+            p.mat = res$P, sig.level = 0.01, insig = "blank")
+   
+   library("PerformanceAnalytics")
+   chart.Correlation(emission_type, histogram = TRUE, pch=19)
+   
+   #no correlation between type and carbon emission value
+
+
+```
+
+```{r bar, warning=FALSE, message=FALSE}
+
+   barchart1<-ggplot(data=emission_date_type_name, aes(x=emission, y=type_name, fill=type_name))+
+      labs(title="Carbon Emission in the United States", x="Carbon Emission(in million metric tons)", y="")+geom_col(position = "dodge")
+   barchart1<-barchart1+guides(fill=guide_legend(title="Type"))
+   
+   barchart1
+   
+   barchart2<-ggplot(data=emission_date_type_name, aes(x=date, y=emission, fill=type_name))+
+      labs(title="Carbon Emission in the United States", x="Carbon Emission(in million metric tons)", y="")+geom_col(position = "dodge")
+   barchart2<-barchart2+guides(fill=guide_legend(title="Type"))
+   
+   barchart2
+  
+```
+
+```{r scatter, warning=FALSE, message=FALSE}
+   scatterplot1<-ggplot(data=emission_date_type_name, aes(x=date, y=emission))+
+      labs(title="Carbon Emission in the United States", x="Date", y="Carbon Emission(in million metric tons)")+
+      geom_point(aes(color=type_name))+theme(axis.text.x=element_text(angle=90,hjust = 1,vjust = 1))
+   
+   scatterplot1
+
+```
+
+```{r line, warning=FALSE, message=FALSE}
+   linechart1<-ggplot(emission_date_type_name, aes(x=date, y=emission))+geom_line(aes(color=type_name))+
+      labs(title="Carbon Emission in the United States", x="Date", y="Carbon Emission(in million metric tons")+theme(axis.text.x=element_text(angle=90,hjust = 1,vjust = 1))
+   
+   linechart1<-linechart1+guides(color=guide_legend(title="Type"))
+   
+   linechart1
+                                 
+```
+
+# Time series Analysis with Arima or Exponential Smoothing
+
+```{r}
+
+   carbon_emission_value <- no_na_carbon_emission
+   range(date)
+
+   apply(carbon_emission_value, 2, function(x) any(is.na(x))) # checking for missing values
+
+```
+
+```{r timeseries2}
+  
+  ts_coal <- ts(carbon_emission_value$Value[which(no_na_carbon_emission$description_reduced=='coal')], start = c(1973, 1), end=c(2016,7), frequency = 12 )
+  ts_distillateFuel <- ts(carbon_emission_value$Value[which(no_na_carbon_emission$description_reduced=='distillate fuel')], start = c(1973, 1),  end=c(2016,7), frequency = 12 )
+  ts_geothermalEner <- ts(carbon_emission_value$Value[which(no_na_carbon_emission$description_reduced=='geothermal energy')], start = c(1973, 1),  end=c(2016,7),frequency = 12 )
+  ts_naturalGas <- ts(carbon_emission_value$Value[which(no_na_carbon_emission$description_reduced=='natural gas')], start = c(1973, 1),  end=c(2016,7),frequency = 12 )
+  ts_nonBiomass <- ts(carbon_emission_value$Value[which(no_na_carbon_emission$description_reduced=='non-biomass waste')], start = c(1973, 1), end=c(2016,7), frequency = 12 )
+  ts_petroleumCoke <- ts(carbon_emission_value$Value[which(no_na_carbon_emission$description_reduced=='petroleum coke')], start = c(1973, 1),  end=c(2016,7),frequency = 12 )
+  ts_petroleumElectric <- ts(carbon_emission_value$Value[which(no_na_carbon_emission$description_reduced=='petroleum electric power')], start = c(1973, 1),  end=c(2016,7), frequency = 12 )
+  ts_residualFuel <- ts(carbon_emission_value$Value[which(no_na_carbon_emission$description_reduced=='residual fuel oil')], start = c(1973, 1),  end=c(2016,7),frequency = 12 )
+  ts_totalEner <- ts(carbon_emission_value$Value[which(no_na_carbon_emission$description_reduced=='total energy')], start = c(1973, 1),  end=c(2016,7),frequency = 12 )
+  ts_allEmission <- ts(carbon_emission_value$Value, start = c(1973, 1), end=c(2016,7), frequency = 12)
+  
+  plot(ts_coal, main = "Carbon Emission for Coal from Jan 01, 1973 - July 01, 2016", xlab = "Year", ylab = "Carbon emission value")
+  plot(ts_distillateFuel, main = "Carbon Emission for distillate fuel from Jan 01, 1973 - July 01, 2016", xlab = "Year", ylab = "Carbon emission value" )
+  plot(ts_geothermalEner, main = "Carbon Emission for geothermal energy from Jan 01, 1973 - July 01, 2016", xlab = "Year", ylab = "Carbon emission value")
+  plot(ts_naturalGas, main = "Carbon Emission for geothermal energy from Jan 01, 1973 - July 01, 2016", xlab = "Year", ylab = "Carbon emission value")
+  plot(ts_nonBiomass, main = "Carbon Emission for geothermal energy from Jan 01, 1973 - July 01, 2016", xlab = "Year", ylab = "Carbon emission value")
+  plot(ts_petroleumCoke, main = "Carbon Emission for petroleum coke from Jan 01, 1973 - July 01, 2016", xlab = "Year", ylab = "Carbon emission value")
+  plot(ts_petroleumElectric, main = "Carbon Emission for petroleum electric power from Jan 01, 1973 - July 01, 2016", xlab = "Year", ylab = "Carbon emission value")
+  plot(ts_residualFuel, main = "Carbon Emission for residual fuel oil from Jan 01, 1973 - July 01, 2016", xlab = "Year", ylab = "Carbon emission value")
+  plot(ts_totalEner, main = "Carbon Emission for total energy from Jan 01, 1973 - July 01, 2016", xlab = "Year", ylab = "Carbon emission value")
+
+```
+```{r adf.test}
+
+  adf.test(ts_allEmission)
+
+```
+__You can see the box plots leaving the 95 percent confidence boundary crossing the threshold from the autocorrelation. From this, it is to note that there is autocorrelation and resulting in data being non-stationary. To make the data to be stationary, enforcing the difference concept is the best approach, and from there, we can carry out more operations. We would be using total_energy. P-value is  0.9828, which is more than the significance level of 0.05. Therefore we fail to reject the null hypothesis.__ 
+
+# Detrending technique is used to remove the trend component from the time series to make it stationary 
+
+```{r}
+
+  ts_allEmission_stl <- stl(ts_allEmission, s.window = "period")$time.series[,2]
+  
+  detrend_ts = ts_allEmission - (ts_allEmission_stl - ts_allEmission_stl[1])
+  plot(detrend_ts)
+  
+  ts_allEmission <- detrend_ts
+  
+  adf.test(ts_allEmission)
+  
+
+  acf(ts_allEmission) #autocorellation
+  pacf(ts_allEmission)  #partial autocorellation
+
+```
+
+__Here, the p-value is 0.01, which is less than the significance level, so we have enough evidence to reject the null hypothesis. It appears to be stationary with constant mean and variance and having a unit root. Although there seems to be autocorrelation present with the ACF showing eight box plots going outside of the 95 percent confidence boundary.__ 
+
+```{r }
+
+   carbonEmission_train <- window(ts_allEmission, start = c(1990,1), end = c(2015, 7), 
+                     frequency = 12)
+   carbonEmission_test <- window(ts_allEmission, start = c(2015,8), end = c(2016,7), 
+                      frequency = 12)
+   
+```
+
+```{r 1, warning=FALSE, message=FALSE}
+
+   Time<-time(carbonEmission_train)
+   
+   Seas<- factor(cycle(carbonEmission_train))
+   
+   
+   carbonEmission.lm<- lm(carbonEmission_train~0+Time+Seas)
+   
+   summary(carbonEmission.lm)
+
+```
+
+```{r 2, warning=FALSE, message=FALSE}
+
+   new.Time<- seq(2015.55, len= 12, by= 1/12)
+   
+   new.Seas<- factor(c(7,8,9,10,11,12,1,2,3,4,5,6))
+   
+   new.data<- data.frame(Time=new.Time, Seas=new.Seas)
+   
+   new.data
+
+```
+
+```{r predict, warning=FALSE, message=FALSE}
+
+   predict.lm<-predict(carbonEmission.lm, new.data)
+   
+   predict.lm
+
+```
+
+```{r resid, warning=FALSE, message=FALSE}
+
+   carbonEmission.lm.resid<- carbonEmission.lm$residuals
+   
+   acf(carbonEmission.lm.resid)
+   
+   pacf(carbonEmission.lm.resid)
+
+```
+
+```{r best order, warning=FALSE, message=FALSE}
+
+   best.order <- c(0, 0, 0)
+   
+   best.aic <- Inf
+   for (i in 0:3) for (j in 0:3) {
+     fit.aic <- AIC(arima(carbonEmission.lm.resid, order = c(i, 0,
+                                                  j)))
+     if (fit.aic < best.aic) {
+       best.order <- c(i, 0, j)
+       best.arma <- arima(carbonEmission.lm.resid, order = best.order)
+       best.aic <- fit.aic
+     }}
+   
+   best.order
+
+```
+
+```{r coff, warning=FALSE, message=FALSE}
+
+   resid.best.arma <- best.arma
+   
+   coef(best.arma)
+
+```
+
+```{r, warning=FALSE, message=FALSE}
+
+   resid.best.arma.pred <- predict(resid.best.arma, n.ahead = 12)
+   
+   resid.best.arma.pred$pred
+
+```
+
+```{r, warning=FALSE, message=FALSE}
+
+   carbonEmission.pred<- ts((predict.lm+resid.best.arma.pred$pred),start=c(2015,7), frequency = 12)
+   
+   ts.plot(cbind(carbonEmission_train, carbonEmission.pred), lty= 1:2)
+   
+   ts.plot(cbind(carbonEmission.pred, carbonEmission_test), lty=1:2)
+
+```
+
+```{r error, warning=FALSE, message=FALSE}
+
+   #Means absolute error for forecasting
+   
+   mean(abs(carbonEmission_test - carbonEmission.pred)/carbonEmission_test)*100
+   
+   ts_allEmission<-na.omit(ts_allEmission)
+   
+   summary(ts_allEmission)
+   
+```
+
+```{r}
+
+   #using naive bayes for forecasting
+   
+   library(forecast)
+   library(fpp2)
+   library(TTR)
+   library(dplyr)
+
+```
+
+```{r}
+
+   head(carbonEmission_train)
+   
+   head(carbonEmission_test)
+
+```
+
+```{r}
+
+   mape <- function(actual,pred){
+    mape <- mean(abs((actual - pred)/actual))*100
+    return (mape)
+   }
+
+```
+
+```{r}
+
+   naive_mod <- naive(carbonEmission_train, h = 12)
+   summary(naive_mod)
+   naive_df<-as.data.frame(naive_mod)
+   
+   carbonemission_testdf<-as.data.frame(carbonEmission_test)
+   carbonemission_testdf$naive<-naive_df$`Point Forecast`
+   
+   naive_mape=mape(carbonemission_testdf$x,carbonemission_testdf$naive)
+   naive_mape
+   
+```
+
+```{r}
+
+   #Simple Exponential Smoothing
+   
+   se_model <- ses(carbonEmission_train, h = 12)
+   summary(se_model)
+   
+   se_df<-as.data.frame(se_model)
+   
+   carbonemission_testdf$se<-se_df$`Point Forecast`
+   
+   se_mape=mape(carbonemission_testdf$x,carbonemission_testdf$se)
+   se_mape
+   
+```
+
+```{r}
+
+   #holt's trend method
+   
+   holt_model <- holt(carbonEmission_train, h = 12)
+   
+   summary(holt_model)
+   
+   df_holt = as.data.frame(holt_model)
+   
+   carbonemission_testdf$holt<-df_holt$`Point Forecast`
+   
+   holt_mape=mape(carbonemission_testdf$x,carbonemission_testdf$holt)
+   holt_mape
+   
+```
+
+```{r}
+
+   arima_model <- auto.arima(carbonEmission_train)
+   
+   summary(arima_model)
+   
+   fore_arima = forecast::forecast(arima_model, h=12)
+   
+   df_arima = as.data.frame(fore_arima)
+   
+   
+   carbonemission_testdf$arima<-df_arima$`Point Forecast`
+   
+   arima_mape= mape(carbonemission_testdf$x,carbonemission_testdf$arima)
+   arima_mape
+
+```
+
+```{r}
+
+   model_tbats <- tbats(carbonEmission_train)
+   summary(model_tbats)
+   
+   fore_tbats = forecast::forecast(model_tbats, h=12)
+   
+   df_tbats <-as.data.frame(fore_tbats)
+   
+   carbonemission_testdf$tbats<-df_tbats$`Point Forecast`
+   
+   tbats_mape = mape(carbonemission_testdf$x,carbonemission_testdf$tbats)
+   
+   tbats_mape
+   
+```
+
+```{r mape}
+
+   mape_Score_df = data.frame("Model_name" = c('Naive', 'Exponential Smoothing', 'Holts Trend', 'Arima', 'TBATS'),
+                           "Accuracy_Score" = c(naive_mape, se_mape, holt_mape, arima_mape, tbats_mape)) 
+     
+   # display dataframe
+   head(mape_Score_df)
+
+```
+
+```{r mapeVisualization}
+
+   # Add title, narrower bars, fill color, and change axis labels
+   ggplot(data=mape_Score_df, aes(x=Model_name, y=Accuracy_Score, fill=Model_name)) + 
+       geom_bar(width=.8, stat="identity") + 
+       guides(fill=FALSE) +
+       xlab("Model name") + ylab("Accuracy score: MAPE") +
+       ggtitle("Accuracy metrics result") +
+       geom_bar(stat="identity") +
+          scale_fill_manual(values=c("red2", "slateblue4", "green3", "orange", "olivedrab2")) + theme_bw()
+    
+    
+```
+
+__The Naive, Simple Exponential Smoothing, and Holts Trend models did well at equally achieving a lower MAPE of 6.28 percent, 4.12 percent, and 4.16 percent, respectively. However, ARIMA and TBATS model emerged as the winner based on their performances on the test data with MAPE close to 2.31 percent and 2.60 percent, respectively. Therefore, we would use the Arima model to predict the next four years. __
+
+
+```{r four years}
+
+   myforecast<-forecast(arima_model,level=c(95),h=5*12)
+   
+   myforecast
+  
+   plot(myforecast) 
+   
+   #carbon emission of july 2016 vs july 2020
+
+   percent_change= ((1.906860-1.803964)/1.803964)*100
+   
+   percent_change
+
+  
+```
 
